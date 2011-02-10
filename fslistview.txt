@@ -1,0 +1,42 @@
+fslistview spec
+========================
+
+fslistview is a file system using FUSE that allows to expose list
+of files in a sigle virtual directory. It's possible to use several
+lists at once.
+
+If file name is repeated, then number is appended.
+
+FS allows following operations on files:
+* read content of file
+* rename file
+* remove file
+
+At the moment other operations are not permitted.
+
+
+File list
+-----------------------------------
+
+Each line in file list is a **full** path; special symbol ``~`` is
+expadned.
+
+Empty lines are skipped. Lines beginning with ``#`` are considered
+as comments and also skipped.
+
+
+Loading file list
+----------------------------------
+
+It's done with ``mkdir`` command where argument is a path of file list.
+List is loaded from file and virtual directory with same name as file.
+
+::
+
+	mkdir /home/user/recent-photos.list
+
+
+Removing file list
+------------------
+
+It's done with ``rmdir`` command.
