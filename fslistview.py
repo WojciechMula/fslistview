@@ -5,30 +5,148 @@ import stat
 import errno
 import os
 from fuse import Fuse
-from os.path import split, abspath, isfile
+from os.path import split, abspath, isfile, join
 
-f = open('/home/wojtek/log', 'w')
-def log(s):
-	f.write(s + '\n')
-	f.flush();
+# setup logging
 
-def logfn(fn):
-	def wrapper(*args, **kwargs):
-		f.write("%s(%r, %r)\n" % (fn.__name__, args, kwargs))
-		f.flush()
-		return fn(*args, **kwargs)
+def log(s):	# by default do nothing
+	pass
+	
+def logfn(fn):	# NOP-decorator:
+	return fn
 
-	return wrapper
+def log_exception(s=None):
+	pass
 
-def log_exception(info="!!!error"):
-	import traceback
-	log(info)
-	traceback.print_exc(file=f)
+if 'FSLISTVIEW_LOG' in os.environ:
+	log_name  = 'fslistview.%d.log' % (os.getpid())
+	directory =  os.environ['FSLISTVIEW_LOG']
+	if not directory:
+		directory = 'tmp'
+
+	path = join(directory, log_name)
+	print "fslistview: logging to " + path
+	f = open(path, 'w')
+
+	def log(s):
+		f.write(s + '\n')
+		f.flush();
+
+	def log_exception(info="exception"):
+		import traceback
+		log(info)
+		traceback.print_exc(file=f)
+
+
+	if 'FSLISTVIEW_LOG_FUNCTIONS' in os.environ:
+		print "fslistview: logging all function calls [debug]"
+		def logfn(fn):
+			def wrapper(*args, **kwargs):
+				f.write("%s(%r, %r)\n" % (fn.__name__, args, kwargs))
+				f.flush()
+				try:
+					return fn(*args, **kwargs)
+				except:
+					log_exception(fn.__name__)
+					raise
+
+			return wrapper
+else:
+	print "fslistview: logging disabled"
+
+
 
 READ_ONLY_PERM = \
 	stat.S_IRUSR | stat.S_IXUSR | \
 	stat.S_IRGRP | stat.S_IXGRP | \
 	stat.S_IROTH | stat.S_IXOTH
+
+class FileList(object):
+	"List of files. Support renaming and removing 'real' files."
+
+	def __init__(self, path):
+		self.path	= path
+		self.timestamp	= None
+		self.files	= {}
+		self.counters	= {}
+		self.reload()
+
+	def reload(self):
+		now = os.stat(self.path)
+		if self.timestamp != now:
+			self._load_list()
+			self.timestamp = now
+
+	def __len__(self):
+		return len(self.files)
+
+	def _preprocess_path(self, path):
+		tmp = os.path.expanduser(path)
+		tmp = os.path.abspath(tmp)
+		return tmp
+
+	def _is_path_valid(self, path):
+		return isfile(path)
+
+	def _load_list(self):
+		self.files = {}
+		for line in open(self.path, 'r'):
+			line = line.rstrip()
+			if not line:
+				# skip empty lines
+				break
+			elif line[0] == '#':
+				# skip comments
+				break
+
+			line = self._preprocess_path(line)
+			if self._is_path_valid(line):
+				log("entry:" + line)
+
+				dir, file = split(line)
+				self._set_file(file, line)
+		pass
+
+	def _set_file(self, file, real_path):
+		if file in self.files:
+			# repeated name, append number
+			n    = self.counters.get(file, 0)
+			name, ext = os.path.splitext(file)
+			name = "%s {%d}%s" % (name, n+1, ext)
+
+			self.counters[file] = n + 1
+		else:
+			name = file
+
+		self.files[name] = real_path
+
+
+	def __getitem__(self, key):
+		return self.files[key]
+
+
+	def __iter__(self):
+		return iter(self.files)
+
+
+	def rename(self, name1, name2):
+		if name1 == name2:
+			return
+
+		path1 = self[name1]
+		dir, _ = split(path1)
+		path2 = join(dir, name2)	# replace file part
+
+		os.rename(path1, path2)		# do the job
+
+		del self.files[name1]		# update list
+		self._set_file(name2, path2)
+
+	def remove(self, name):
+		path = self[name]
+		os.remove(path)
+		del self.files[name]
+
 
 class FileProxy(object):
 
@@ -114,69 +232,53 @@ class FSFileList(Fuse):
 		class Wrapper(FileProxy):
 			def __init__(self2, *args, **kwargs):
 				log("Wrapper::init(%r, %r, %r, %r)" % (self2, self, args, kwargs))
-				try:
-					FileProxy.__init__(self2, self, *args, **kwargs)
-				except:
-					log_exception()
+				FileProxy.__init__(self2, self, *args, **kwargs)
 		
 		self.file_class = Wrapper
+		self.files = ""
 
-		# lists
+	@logfn
+	def fsinit(self):
+		files = self.files.split(',')
+		#'/home/wojtek/list', '/home/wojtek/mp3']
+
 		self.lists = {}
-		self._load_list('/home/wojtek/list')
-		self._load_list('/home/wojtek/mp3')
+		for path in files:
+			log("path=%s" % path)
+			path = os.path.abspath(path)
+			log("path=%s" % path)
+			name = "/" + split(path)[-1]
+			self.lists[name] = FileList(path)
+
 
 	def _vpath_to_real_path(self, path):
-		dir, file = os.path.split(path)
+		dir, file = split(path)
 		try:
-			return self.lists[dir[1:]][file]
+			return self.lists[dir][file]
 		except KeyError:
 			err = IOError()
 			err.errno = errno.ENOENT
 			raise err
 
-	def _preprocess_path(self, path):
-		tmp = os.path.expanduser(path)
-		tmp = os.path.abspath(tmp)
-		return tmp
-
-	def _is_path_valid(self, path):
-		return True or isfile(path)
-
-	def _load_list(self, path):
-		L = {}
-		for line in open(path, "r"):
-			line = line.rstrip()
-			if not line:
-				# skip empty lines
-				break
-			elif line[0] == '#':
-				# skip comments
-				break
-
-			line = self._preprocess_path(line)
-			if self._is_path_valid(line):
-				log("entry:" + line)
-
-				dir, file = os.path.split(line)
-				L[file] = line
-
-			
-		directory = split(path)[-1]
-		self.lists[directory] = L
 
 	@logfn
 	def readdir(self, path, offset):
 		if path == '/':
 			# enumerate of lists
 			for name in self.lists:
-				d = fuse.Direntry(name)
+				d = fuse.Direntry(name[1:])
 				d.type = stat.S_IFDIR
 				yield d
 		else:
 			# numerate given list
-			directory = split(path)[-1]
-			for path in self.lists[directory]:
+			try:
+				ls = self.lists[path]
+			except KeyError:
+				err = IOError()
+				err.errno = errno.ENOENT
+				raise err
+
+			for path in ls:
 				name = split(path)[-1]
 				d = fuse.Direntry(name)
 				d.type = stat.S_IFREG
@@ -184,8 +286,27 @@ class FSFileList(Fuse):
 
 	@logfn
 	def unlink(self, path):
-		
+		dir, file = split(path)
+		ls = self.lists[dir]
+		ls.remove(file)
 
+	@logfn
+	def rename(self, path1, path2):
+		dir1, file1	= split(path1)
+		dir2, file2	= split(path2)
+
+		if dir1 != dir2:
+			return -errno.EINVAL
+
+		try:
+			ls = self.lists[dir1]
+		except KeyError:
+			return -errno.ENOENT
+
+		if file1 != file2:
+			ls.rename(file1, file2)
+
+	
 	@logfn
 	def getattr(self, path):
 		if path == "/":
@@ -204,7 +325,7 @@ class FSFileList(Fuse):
 			st.st_mtime	= 0
 			st.st_ctime	= 0
 			return st
-		elif path[1:] in self.lists:
+		elif path in self.lists:
 			st = fuse.Stat()
 			st.st_ino	= 0
 			st.st_dev	= 0
@@ -214,7 +335,7 @@ class FSFileList(Fuse):
 			st.st_uid	= 0
 			st.st_gid	= 0
 			st.st_rdev	= None
-			st.st_size	= len(self.lists[path[1:]])
+			st.st_size	= len(self.lists[path])
 			st.st_blocks	= 0
 			st.st_atime	= 0
 			st.st_mtime	= 0
@@ -247,7 +368,12 @@ def main():
 
 	server = FSFileList()
 	server.multithreaded = False
-	server.parse(errex=1)
+	server.parser.add_option(
+		mountopt="files",
+		metavar="FILES",
+		help="load lists from files"
+	)
+	server.parse(values=server, errex=1)
 	server.main()
 
 
