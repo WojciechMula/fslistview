@@ -1,42 +1,69 @@
-fslistview spec
+fslistview overview
 ========================
 
-fslistview is a file system using FUSE that allows to expose list
-of files in a sigle virtual directory. It's possible to use several
-lists at once.
+**fslistview** is a file system using FUSE__ that allows to expose
+flat list of files in a single virtual directory. Only files are
+considered --- directories, links, fifos, etc. are skipped.  If file
+name repeat, then some number is appended.
 
-If file name is repeated, then number is appended.
+It's possible to mount several lists at once, each list is represented
+as subdirectory.  If a file containing list has been changed, then
+list is reloaded.
 
-FS allows following operations on files:
+**fslistview** allows limited operations set on real files:
+
 * read content of file
-* rename file
 * remove file
 
-At the moment other operations are not permitted.
+__ http://fuse.sourceforge.net/
 
 
-File list
+File lists
 -----------------------------------
 
-Each line in file list is a **full** path; special symbol ``~`` is
-expadned.
+Rules:
 
-Empty lines are skipped. Lines beginning with ``#`` are considered
-as comments and also skipped.
+* each line in file list is a path; special symbol ``~`` (tilde)
+  is expanded
+* empty lines are skipped
+* lines beginning with ``#`` are considered as comments
+* paths must be in absolute form
+* all relative paths could be converted to absolute 
+  if option ``--base-dir`` is set
 
 
-Loading file list
-----------------------------------
+Invoking
+-----------------------------------
 
-It's done with ``mkdir`` command where argument is a path of file list.
-List is loaded from file and virtual directory with same name as file.
+Apart of standard FUSE options following options has been
+defined.
+
+-b DIR			base directory for **next list**
+--base-dir=DIR		long version of -b
+
+-f FILE			file containting list
+--file=FILE		long version of -f
+
+
+These options can be passed as many times as it's needed,
+for example:
 
 ::
 
-	mkdir /home/user/recent-photos.list
+	python fsfilelistview -b /mnt/music -f latest-cd.list -f duplicated-documents.list -b /mnt/data/backups -f old-backups.list mount-point [other FUSE options]
+
+This command will mount three file lists:
+
+* ``latest-cd.list`` [relative paths are set to ``/mnt/music``]
+* ``duplicated-documents.list``
+* ``old-backups.list`` [reloaded paths are set to ``/mnt/data/backups``]
 
 
-Removing file list
-------------------
+Download
+-----------------------------------
 
-It's done with ``rmdir`` command.
+License: **BSD**
+
+* `fsfilelistview.py`__ (last update [2011-02-15])
+
+__ fsfilelistview.py
