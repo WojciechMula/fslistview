@@ -1,5 +1,11 @@
-fslistview overview
-========================
+fslistview
+==========
+
+.. contents::
+
+
+Introduciton
+-----------------------------------
 
 **fslistview** is a file system using FUSE__ that allows to expose
 flat list of files in a single virtual directory. Only files are
@@ -32,11 +38,14 @@ Rules:
   if option ``--base-dir`` is set
 
 
-Invoking
+Command line
 -----------------------------------
 
-Apart of standard FUSE options following options has been
-defined.
+::
+
+	fslistview.py [progam options] mount-point [FUSE options]
+
+Where program options are:
 
 -b DIR			base directory for **next list**
 --base-dir=DIR		long version of -b
@@ -50,13 +59,22 @@ for example:
 
 ::
 
-	python fsfilelistview -b /mnt/music -f latest-cd.list -f duplicated-documents.list -b /mnt/data/backups -f old-backups.list mount-point [other FUSE options]
+	fslistview.py -b /mnt/music -f latest-cd.list -f duplicated-documents.list -b /mnt/data/backups -f old-backups.list mount-point
 
 This command will mount three file lists:
 
-* ``latest-cd.list`` [relative paths are set to ``/mnt/music``]
+* ``latest-cd.list`` [relative paths are bind to ``/mnt/music``]
 * ``duplicated-documents.list``
-* ``old-backups.list`` [reloaded paths are set to ``/mnt/data/backups``]
+* ``old-backups.list`` [reloaded paths are bind to ``/mnt/data/backups``]
+
+
+Environment variable
+-----------------------------------
+
+Variable ``FSLISTVIEW_LOG`` should be used only for debugging purposes.
+This variable have to point a writable directory (for example ``/tmp/``),
+where file ``fslistview.{PID}.log`` is created and filled with information
+about all functions calls and possible errors (exceptions).
 
 
 Download
@@ -64,6 +82,6 @@ Download
 
 License: **BSD**
 
-* `fsfilelistview.py`__ (last update [2011-02-15])
+* `fslistview.py`__ (last update [2011-02-15])
 
-__ fsfilelistview.py
+__ fslistview.py

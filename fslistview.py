@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+#	-*- coding: iso-8859-2 -*-
+#
+#	FUSE file system that allows to access files
+#	from lists. FS is able to manage several file
+#	lists at single mount point.
+#
+#	author:	Wojciech Mu³a
+#	e-mail: wojciech_mula@poczta.onet.pl
+#	www:    http://0x80.pl/
+#
+#	license: BSD
+#
+#	initial release: 2011-02-15
 
 import fuse
 import stat
@@ -11,8 +24,8 @@ from os.path import split, abspath, isfile, join
 
 def log(s):	# by default do nothing
 	pass
-	
-def logfn(fn):	# NOP-decorator:
+
+def logfn(fn):	# NOP-decorator
 	return fn
 
 def log_exception(s=None):
@@ -30,27 +43,24 @@ if 'FSLISTVIEW_LOG' in os.environ:
 
 	def log(s):
 		f.write(s + '\n')
-		f.flush();
+		f.flush()
 
 	def log_exception(info="exception"):
 		import traceback
 		log(info)
 		traceback.print_exc(file=f)
 
+	def logfn(fn):
+		def wrapper(*args, **kwargs):
+			f.write("%s(%r, %r)\n" % (fn.__name__, args, kwargs))
+			f.flush()
+			try:
+				return fn(*args, **kwargs)
+			except:
+				log_exception(fn.__name__)
+				raise
 
-	if 'FSLISTVIEW_LOG_FUNCTIONS' in os.environ:
-		print("fslistview: logging all function calls [debug]")
-		def logfn(fn):
-			def wrapper(*args, **kwargs):
-				f.write("%s(%r, %r)\n" % (fn.__name__, args, kwargs))
-				f.flush()
-				try:
-					return fn(*args, **kwargs)
-				except:
-					log_exception(fn.__name__)
-					raise
-
-			return wrapper
+		return wrapper
 else:
 	print("fslistview: logging disabled")
 
@@ -111,6 +121,8 @@ class FileList(object):
 
 				dir, file = split(line)
 				self._set_file(file, line)
+			else:
+				print("skipping: " + line)
 		pass
 
 	def _set_file(self, file, real_path):
@@ -182,8 +194,6 @@ class FileProxy(object):
 
 	@logfn
 	def fgetattr(self):
-		log("%r" % os.fstat(self.fd))
-
 		stfile = os.fstat(self.fd)
 		#stfile.st_mode	= stat.S_IFREG | READ_ONLY_PERM
 		return stfile
@@ -377,49 +387,68 @@ class FSFileList(Fuse):
 
 
 def main():
-	import optparse
 	import sys
 
+	def print_help(exit=True):
+		print("""Usage: fslistview.py [program options] mount-point [FUSE options]
+
+		-b, --basedir		base dir for next file
+		-f, --file		name of file with list
+		-h, --help		print this and FUSE help
+		""")
+
+		if exit:
+			sys.exit(1)
+
 	# parse arguments
-	parser = optparse.OptionParser()
-	parser.add_option(
-		"-b", "--basedir",
-		dest="basedir",
-		help="base dir for next file"
-	)
+	files     = []
+	basedir   = None
+	show_help = False
+	args = sys.argv[1:]
+	while args:
+		print args
+		if args[0] in ['-b', '--basedir', '--basedir=']:
+			if len(args) > 1:
+				basedir = args[1]
+				del args[0:2]
+			else:
+				print_help()
 
-	def parse_file(option, opt, value, parser):
-		item = (parser.values.basedir, value)
-		if parser.values.files is None:
-			parser.values.files = [item]
+		elif args[0] in ['-f', '--file', '--file=']:
+			if len(args) > 1:
+				tmp = args[1]
+				del args[0:2]
+
+				files.append((basedir, tmp))
+				basedir = None
+			else:
+				print_help()
+
+		elif args[0] in ['-h', '--help']:
+			print_help(False)
+			show_help = True
+			break
 		else:
-			parser.values.files.append(item)
+			break
 
-		parser.values.basedir = None	# reset basedir
-
-	parser.add_option(
-		"-f", "--file",
-		dest="files",
-		type="string",
-		help="name of file with list",
-		action="callback",
-		callback=parse_file
-	)
-
-	options, args = parser.parse_args(sys.argv)
 
 	# load file lists
 	lists = []
-	if options.files:
-		for basedir, path in options.files:
+	if files:
+		for basedir, path in files:
 			if not basedir:
 				basedir = None
 
-			print("loading list from %s..." % path)
+			if basedir is not None:
+				print("loading list from %s [base: %s]..." % (path, basedir))
+			else:
+				print("loading list from %s..." % path)
+
 			L = FileList(path, basedir)
 			lists.append(L)
-	else:
-		parser.error("at least one -f/--file option is required")
+	elif not show_help:
+		print("at least one -f/--file option is required")
+		sys.exit(1)
 
 	# FUSE init
 	print("starting FUSE...")
