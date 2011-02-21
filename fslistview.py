@@ -226,7 +226,7 @@ class FileProxy(object):
 		pass
 
 	@logfn
-	def release(self):
+	def release(self, flags):
 		self.file.close()
 		
 	@logfn
