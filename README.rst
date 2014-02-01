@@ -77,12 +77,7 @@ where file ``fslistview.{PID}.log`` is created and filled with information
 about all functions calls and possible errors (exceptions).
 
 
-Download
+License
 -----------------------------------
 
-:Author: Wojciech Mu³a, wojciech_mula@poczta.onet.pl
-:License: **BSD**
-
-* `fslistview.py`__ (last update [2011-02-15])
-
-__ fslistview.py
+Program is licensed under simplfied **BSD**
